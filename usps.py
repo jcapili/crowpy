@@ -1,3 +1,5 @@
+# CODE FROM https://github.com/BuluBox/usps-api
+
 import json
 import requests
 import xmltodict
