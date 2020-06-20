@@ -1,3 +1,6 @@
+geopy
+lxml
+pandas
 requests
 tqdm
-geopy
+xmltodict

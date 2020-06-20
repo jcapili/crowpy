@@ -1,5 +1,6 @@
 README.md
 setup.py
+crowpy/__init__.py
 crowpy/crowpy.py
 crowpy/driver.py
 crowpy/usps.py
