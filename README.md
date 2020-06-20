@@ -4,6 +4,11 @@ CrowPy (pronounced "*crow-pie*") uses Python to calculate the number of plane an
 CrowPy was created to allow companies to easily track how many aggregate miles their packages have traveled in order to offset the associated carbon emissions. 
 
 ## Installation
+Install using pip
+```
+pip install crowpy
+```
+Before you begin, you'll also need to register for a USPS API key [here](https://www.usps.com/business/web-tools-apis/welcome.htm).
 
 ## Usage
 **Single Tracking Numbers**
@@ -52,4 +57,4 @@ CrowPy was created as an open-source project with the intention of steadily impr
 * portability to other delivery services (UPS, FedEx, etc.)
 * a suggestion for a third-party that is able to verify the accuracy of these functions
 
-I have no authority on/prior experience with this, so I'm more than happy to collaborate on this project with more knowledgeable people -- in fact, constructive criticism is encouraged because that's the whole reason for this online release. If anyone has questions/suggestions for ways to improve the code, please contact me [here](https://jcapili.wixsite.com/jasoncapili/contact).
+I have no authority on/prior experience with this, so I'm more than happy to collaborate on this project with more knowledgeable people. Constructive criticism is welcome :) If anyone has questions/suggestions for ways to improve the code, please contact me [here](https://jcapili.wixsite.com/jasoncapili/contact).

@@ -7,7 +7,7 @@ setup(
     author_email='jcapili@alumni.scu.edu',
     packages=['crowpy'],
     include_package_data=True,
-    install_requires=['requests', 'tqdm', 'geopy'],
+    install_requires=['requests', 'tqdm', 'geopy', 'xmltodict', 'lxml'],
     url='https://github.com/jcapili/crowpy',
     license='MIT',
     description='Python code for calculating travel distance of USPS shipments',
