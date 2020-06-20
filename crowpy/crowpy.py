@@ -1,3 +1,4 @@
+from usps import USPSApi
 from geopy.geocoders import Nominatim
 from geopy import distance
 from datetime import datetime, timedelta
@@ -295,7 +296,7 @@ class CrowPy(object):
                         try:
                             realCity = self.sectionalCenterFacilities[state][city]
                         except:
-                            printStr = str(state) + ',' + str(city) + ',' + str(tracking)
+                            printStr = str(state) + ', ' + str(city) + ', ' + str(tracking)
                             print(printStr)
                             continue
                         location = self.geolocate({"city":realCity,"state":state})
