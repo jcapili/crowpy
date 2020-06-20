@@ -2,18 +2,18 @@ from setuptools import setup
 
 setup(
     name='crowpy',
-    version='0.1.3',
+    version='0.1.5',
     author='Jason Capili',
     author_email='jcapili@alumni.scu.edu',
     packages=['crowpy'],
     include_package_data=True,
     install_requires=[
-        'geopy'
-        'lxml'
-        'pandas'
-        'requests'
-        'tqdm'
-        'xmltodict'
+        'geopy',
+        'lxml',
+        'pandas',
+        'requests',
+        'tqdm',
+        'xmltodict',
     ],
     url='https://github.com/jcapili/crowpy',
     license='MIT',

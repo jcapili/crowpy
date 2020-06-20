@@ -1,6 +1,6 @@
 Metadata-Version: 2.1
 Name: crowpy
-Version: 0.1.3
+Version: 0.1.5
 Summary: Python code for calculating travel distance of USPS shipments
 Home-page: https://github.com/jcapili/crowpy
 Author: Jason Capili
