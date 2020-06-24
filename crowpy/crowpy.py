@@ -1,4 +1,4 @@
-from .usps import USPSApi
+from usps import USPSApi
 from geopy.geocoders import Nominatim
 from geopy import distance
 from datetime import datetime, timedelta
@@ -319,14 +319,16 @@ class CrowPy(object):
         dataIterator = pd.read_csv(str(input_path), chunksize=100)
 
         length = 0
-        for chunk in dataIterator:
-            length += 1
+        # for chunk in dataIterator:
+        #     print("something")
+        #     length += 1
+
         if resetChunks:
             self.chunkList = []
-        
+
         chunkList = self.chunkList
         lambdafunc = lambda row: pd.Series(list(self.calculateMiles(row['trackingNumber'], google)))
-        counter = 1
+        counter = 0
         tqdm.pandas(desc="Progress")
 
         for chunk in dataIterator:
@@ -334,7 +336,7 @@ class CrowPy(object):
                 counter += 1
                 continue
 
-            printStr = "Batch #" + str(counter) + " of " + str(length)
+            printStr = "Batch #" + str(counter+1) + " of " + str(length)
             print(printStr)
             chunkData = chunk[~chunk['zipCode'].str[:5].isin(self.APO_zips)]
             chunkData[['truckMiles','planeMiles']] = chunkData.progress_apply(lambdafunc, axis=1)
