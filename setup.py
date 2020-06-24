@@ -2,7 +2,7 @@ from setuptools import setup
 
 setup(
     name='crowpy',
-    version='0.1.5',
+    version='0.1.6',
     author='Jason Capili',
     author_email='jcapili@alumni.scu.edu',
     packages=['crowpy'],

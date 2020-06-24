@@ -1,6 +1,0 @@
-geopy
-lxml
-pandas
-requests
-tqdm
-xmltodict
