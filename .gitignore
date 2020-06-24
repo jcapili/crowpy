@@ -1,0 +1,6 @@
+*.pyc
+__pycache__
+driver.py
+crowpy.egg-info
+build
+dist
