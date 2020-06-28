@@ -37,7 +37,18 @@ import crowpy
 cp = CrowPy("your_USPS_API_key")
 cp.calculateCSVMiles("~/path/to/input/CSV", "~/path/to/output/CSV")
 ```
-Given a CSV with `trackingInfo` and `zipCode` columns, this function appends `truckMiles` and `planeMiles` columns. 
+Given a CSV with `trackingInfo` and `zipCode` columns, this function appends `truckMiles` and `planeMiles` columns.
+
+There are 2 default inputs to this function that can be changed:
+* The `google` flag, which defaults to `False`, uses Google Maps to calculate the truck miles. Here's an example of how to change it:
+```python
+cp.calculateCSVMiles("~/path/to/input/CSV", "~/path/to/output/CSV", True)
+```
+* There's also a `resetChunks` flag, which always defaults to `True`. This function chunks large CSV's into batches of 100, so setting the `resetChunk` flag to `False` ensures that the function doesn't erase whatever data it has already collected. So if your CSV is 200 rows and the tracking number in row 150 errors due to a Geopy or USPS timeout error, set the flag to `False` and the function will pick up from the 101st row. Here's an example of how to change it:
+```python
+cp.calculateCSVMiles("~/path/to/input/CSV", "~/path/to/output/CSV", False, False)
+```
+*Note*: The data is saved per CrowPy instance, so if the original CrowPy instance is overwritten or reset, the associated data will also be lost. Therefore this function works best in a shell as opposed to a script. Use Ctrl+Z to interrupt this function if necessary.
 
 ## Accuracy
 There is no third-party entity I know of that can be used to verify the accuracy of these functions. However, these functions have been tested and spot checked using Google Maps, which is probably the foremost tool for verifying the accuracy.

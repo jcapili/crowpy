@@ -1,4 +1,4 @@
-from usps import USPSApi
+from .usps import USPSApi
 from geopy.geocoders import Nominatim
 import geopy.geocoders
 from geopy import distance
