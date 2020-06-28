@@ -1,13 +1,17 @@
 from usps import USPSApi
 from geopy.geocoders import Nominatim
+import geopy.geocoders
 from geopy import distance
 from datetime import datetime, timedelta
 from tqdm.auto import trange
 from tqdm import tqdm
-import requests, re
+import requests, re, os, ssl, certifi
 import pandas as pd
 
 class CrowPy(object):
+    # https://github.com/geopy/geopy/issues/124
+    ctx = ssl.create_default_context(cafile=certifi.where())
+    geopy.geocoders.options.default_ssl_context = ctx
     geolocator = Nominatim(user_agent="CrowPy")
 
     # https://en.wikipedia.org/wiki/Sectional_center_facility
@@ -276,7 +280,10 @@ class CrowPy(object):
                 if e['Event'] != 'Out for Delivery':
                     location = self.locate(zipCode)
                     if location:
-                        routeData.append([location.latitude, location.longitude, e['EventDate']+" "+e['EventTime']])
+                        # Safeguard in case this event doesn't have a time, skip this statement and use the time from the prev event
+                        if e['EventTime']:
+                            time = e['EventTime']
+                        routeData.append([location.latitude, location.longitude, e['EventDate']+" "+time])
             else:
                 if e['EventCity'] is not None and 'DISTRIBUTION CENTER' in e['EventCity']:
                     if 'INTERNATIONAL' in e['EventCity']:
@@ -318,16 +325,20 @@ class CrowPy(object):
     def calculateCSVMiles(self, input_path, output_path, google = False, resetChunks = True):
         dataIterator = pd.read_csv(str(input_path), chunksize=100)
 
-        length = 0
-        for chunk in dataIterator.copy():
-            print("something")
-            length += 1
-
         if resetChunks:
             self.chunkList = []
 
         chunkList = self.chunkList
-        lambdafunc = lambda row: pd.Series(list(self.calculateMiles(row['trackingNumber'], google)))
+
+        # Wrapper function for calculate miles so that the data processing isn't messed up by one erroneous tracking number
+        def wrapper(tracking, google):
+            try:
+                return pd.Series(list(self.calculateMiles(tracking, google)))
+            except:
+                return pd.Series([0,0])
+
+        lambdafunc = lambda row: wrapper(row['trackingNumber'], google)
+        length = max(len(pd.read_csv(str(input_path)))/100, 1)
         counter = 1
         tqdm.pandas(desc="Progress")
 
