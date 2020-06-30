@@ -13,7 +13,7 @@ Before you begin, you'll also need to register for a USPS API key [here](https:/
 ## Usage
 **Single Tracking Numbers**
 ```python
-import crowpy
+from crowpy import *
 
 cp = CrowPy("your_USPS_API_key")
 cp.calculateMiles("your_tracking_number")
@@ -23,7 +23,7 @@ This function returns a tuple with the truck miles and plane miles, respectively
 
 To get the data according to Google Maps, use the same function, and set the `google` flag to `True`:
 ```python
-import crowpy
+from crowpy import *
 
 cp = CrowPy("your_USPS_API_key")
 cp.calculateMiles('your_tracking_number', True)
@@ -32,7 +32,7 @@ This function returns the same tuple but with truck miles according to Google Ma
 
 **CSV's**
 ```python
-import crowpy
+from crowpy import *
 
 cp = CrowPy("your_USPS_API_key")
 cp.calculateCSVMiles("~/path/to/input/CSV", "~/path/to/output/CSV")
