@@ -1,7 +1,8 @@
 ## CrowPy
 [![PyPI - Python Version](https://img.shields.io/pypi/pyversions/crowpy)](https://pypi.org/project/crowpy/)
-![PyPI](https://img.shields.io/pypi/v/crowpy)(https://pypi.org/project/crowpy/)
+![PyPI](https://img.shields.io/pypi/v/crowpy)
 [![PyPI - License](https://img.shields.io/pypi/l/crowpy)](https://github.com/jcapili/crowpy/blob/master/LICENSE)
+
 CrowPy (pronounced "*crow-pie*") uses Python to calculate the number of plane and truck miles traveled to deliver a USPS package. The name is a pun on the phrase "As the crow flies."
 
 CrowPy was created to allow companies to easily track how many aggregate miles their packages have traveled in order to offset the associated carbon emissions :truck::package::evergreen_tree:
