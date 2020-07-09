@@ -39,7 +39,8 @@ cp = CrowPy("your_USPS_API_key")
 cp.calculateMiles("your_tracking_number", True)
 ```
 This function returns the same tuple but with truck miles according to Google Maps, and it prints links similar to [this one](https://www.google.com/maps/dir/+34.1341,-118.3215/+33.9850,-118.4695/+33.8121,-117.9190/) with the corresponding driving data.
-<img src="images/maps.png" alt="Google Maps example" width="400"/>
+
+<img src="images/map.png" alt="Google Maps example" width="600"/>
 
 **CSV's**
 ```python
@@ -66,7 +67,7 @@ There is no third-party entity I know of that can be used to verify the accuracy
 
 The most likely point of inaccuracy is calculating driving distance, which is often very different from the distance as the crow flies (hence the name of this project). So the driving miles are calculated based on the 1.417 detour index from [this](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3835347/) national study, where the detour index defined as travel distance divided by straight-line distance. 
 
-<img src="images/study.png" alt="Distance study" width="400"/>
+<img src="images/study.png" alt="Distance study" width="500"/>
 
 The "google" boolean flag in the `calculateMiles` function will provide links to Google Maps routes that can be used to spot check the accuracy of this detour index on a case-by-case basis. But based on past tests, the detour index calculations are typically an overestimate of the Google Maps calculations, which often is preferred so that you can be relatively confident you're *totally* offsetting all shipping-related emissions.
 
