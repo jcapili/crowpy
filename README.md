@@ -1,11 +1,17 @@
 ## CrowPy
 [![PyPI - Python Version](https://img.shields.io/pypi/pyversions/crowpy)](https://pypi.org/project/crowpy/)
-![PyPI](https://img.shields.io/pypi/v/crowpy)
+![PyPI](https://img.shields.io/pypi/v/crowpy&color=green)
 [![PyPI - License](https://img.shields.io/pypi/l/crowpy)](https://github.com/jcapili/crowpy/blob/master/LICENSE)
 
 CrowPy (pronounced "*crow-pie*") uses Python to calculate the number of plane and truck miles traveled to deliver a USPS package. The name is a pun on the phrase "As the crow flies."
 
 CrowPy was created to allow companies to easily track how many aggregate miles their packages have traveled in order to offset the associated carbon emissions :truck::package::evergreen_tree:
+
+Here's a list of a few companies that can actually help you offset your emissions:
+* [Pachama](https://pachama.com/)
+* [Carbonfund.org](https://carbonfund.org/)
+* [Wren](https://projectwren.com/)
+* [Terrapass](https://www.terrapass.com/)
 
 ## Installation
 Install using pip
@@ -30,9 +36,10 @@ To get the data according to Google Maps, use the same function, and set the `go
 from crowpy import *
 
 cp = CrowPy("your_USPS_API_key")
-cp.calculateMiles('your_tracking_number', True)
+cp.calculateMiles("your_tracking_number", True)
 ```
 This function returns the same tuple but with truck miles according to Google Maps, and it prints links similar to [this one](https://www.google.com/maps/dir/+34.1341,-118.3215/+33.9850,-118.4695/+33.8121,-117.9190/) with the corresponding driving data.
+![Google Maps example](images/maps.png)
 
 **CSV's**
 ```python
@@ -58,6 +65,8 @@ cp.calculateCSVMiles("~/path/to/input/CSV", "~/path/to/output/CSV", False, False
 There is no third-party entity I know of that can be used to verify the accuracy of these functions. However, these functions have been tested and spot checked using Google Maps, which is probably the foremost tool for verifying the accuracy.
 
 The most likely point of inaccuracy is calculating driving distance, which is often very different from the distance as the crow flies (hence the name of this project). So the driving miles are calculated based on the 1.417 detour index from [this](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3835347/) national study, where the detour index defined as travel distance divided by straight-line distance. 
+
+![Distance study](images/study.png)
 
 The "google" boolean flag in the `calculateMiles` function will provide links to Google Maps routes that can be used to spot check the accuracy of this detour index on a case-by-case basis. But based on past tests, the detour index calculations are typically an overestimate of the Google Maps calculations, which often is preferred so that you can be relatively confident you're *totally* offsetting all shipping-related emissions.
 
