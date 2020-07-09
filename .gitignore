@@ -4,3 +4,4 @@ driver.py
 crowpy.egg-info
 build
 dist
+.DS_Store
