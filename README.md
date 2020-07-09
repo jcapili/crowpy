@@ -40,7 +40,7 @@ cp.calculateMiles("your_tracking_number", True)
 ```
 This function returns the same tuple but with truck miles according to Google Maps, and it prints links similar to [this one](https://www.google.com/maps/dir/+34.1341,-118.3215/+33.9850,-118.4695/+33.8121,-117.9190/) with the corresponding driving data.
 
-<img src="images/map.png" alt="Google Maps example" width="600"/>
+<img src="images/map_example.png" alt="Google Maps example" width="600"/>
 
 **CSV's**
 ```python
