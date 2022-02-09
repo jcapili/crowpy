@@ -1,4 +1,4 @@
-from .usps import USPSApi
+from usps import USPSApi
 from geopy.geocoders import Nominatim
 import geopy.geocoders
 from geopy import distance
@@ -8,6 +8,12 @@ from tqdm import tqdm
 import requests, re, os, ssl, certifi
 import pandas as pd
 import json
+from timeit import default_timer as timer
+import math
+
+zipcodes = pd.read_csv("spree_public_zipcodes.csv", dtype={'zipcode': str, 'city': str, 'lat': float, 'lon':float, 'state':str})
+zipcodes['city'] = zipcodes['city'].str.upper()
+zipcodes = zipcodes.dropna(subset=['lat', 'lon'])
 
 class CrowPy(object):
     # https://github.com/geopy/geopy/issues/124
@@ -17,6 +23,13 @@ class CrowPy(object):
 
     # https://en.wikipedia.org/wiki/Sectional_center_facility
     sectionalCenterFacilities = {
+        'CA':{
+            'NORTH BAY': 'San Francisco',
+            'CITY OF INDUSTRY': 'West Covina'
+        },
+        'CT':{
+            'SOUTHERN': 'Wallingford',
+        },
         'FL': {
             'SEMINOLE-ORLANDO': 'Orlando',
             'FORT MEYERS': 'Fort Myers'
@@ -51,16 +64,27 @@ class CrowPy(object):
         'NC': {
             'MID CAROLINA-CHARLOTTE': 'Charlotte'
         },
+        'NJ': {
+            'SOUTH JERSEY': 'Atlantic City'
+        },
         'NY': {
             'WESTCHESTER': 'White Plains',
             'WESTERN NASSAU': 'Gardern City',
             'MID-HUDSON': 'Newburgh',
-            'METRO': 'Chelsea'
+            'METRO': 'Chelsea',
+            'NORTHWEST ROCHESTER':'Rochester'
         },
         'PA': {
             'LEHIGH VALLEY': 'Bethlehem'
         }
     }
+    
+    cityStateOptions = {"WEST FARGO": ("West Fargo", "ND"),
+                    "ATLANTA NORTH METRO": ("Atlanta", "GA"),
+                    "SALT LAKE CITY": ("Salt Lake City", "UT"),
+                    "PORTLAND": ("Portland", "OR"),
+                    "ERIE": ("Erie", "PA"),
+                    "ALTOONA": ("Altoona", "PA")}
 
     APO_zips = ['96269','96672','09266','09002','09003','09004','09005','09006','09008','09009','09010','09011','09012','09013','09014','09016','09017','09018','09020','09021','09028','09034','09044','09046','09049','09053','09054','09055','09060','09067','09068','09069','09079','09090','09094','09095','09096','09101','09104','09107','09112','09114','09123','09125','09126','09128','09131','09136','09138','09139','09140','09142','09154','09172','09173','09177','09180','09186','09211','09214','09226','09227','09240','09242','09250','09261','09263','09264','09302','09304','09305','09306','09307','09308','09309','09314','09315','09316','09317','09318','09319','09320','09321','09322','09323','09330','09333','09337','09340','09343','09347','09348','09351','09352','09354','09355','09356','09357','09365','09366','09378','09381','09401','09403','09421','09447','09454','09456','09459','09461','09463','09464','09468','09469','09470','09494','09496','09497','09522','09533','09541','09542','09544','09545','09600','09602','09603','09604','09605','09606','09610','09613','09630','09633','09634','09635','09643','09647','09702','09703','09704','09705','09706','09708','09711','09714','09717','09719','09720','09722','09724','09725','09732','09735','09743','09745','09749','09751','09752','09753','09754','09755','09756','09758','09760','09780','09789','09800','09801','09803','09804','09810','09815','09818','09821','09822','09824','09829','09832','09833','09839','09848','09851','09852','09853','09855','09858','09861','09863','09868','09876','09877','09890','09898','09901','09903','09904','09908','09909','09910']
 
@@ -79,7 +103,7 @@ class CrowPy(object):
         except:
             return self.geolocate(location_dict, tries+1)
 
-    def calculateMiles(self, tracking, osrm, printSteps = False):
+    def calculateMiles(self, tracking, osrm, printSteps = False, debugMode=False):
         """
         Calculate the number of plane/truck miles from a USPS shipment
 
@@ -96,41 +120,64 @@ class CrowPy(object):
             return 0, 0
         
         if 'TrackSummary' not in track.result['TrackResponse']['TrackInfo'].keys():
-            # print "Package has not yet been delivered"
+            print("Package has not yet been delivered", tracking)
             return 0, 0
 
         summaryEvent = track.result['TrackResponse']['TrackInfo']['TrackSummary']
         if 'Delivered' not in summaryEvent['Event']:
-            # print "Package has not yet been delivered"
+            print("Package has not yet been delivered", tracking)
             return 0, 0
 
         try:
             events = track.result['TrackResponse']['TrackInfo']['TrackDetail']
         except:
-            # print "Unable to track the miles for this package: Tracking details unavailable"
+            print("Unable to track the miles for this package: Tracking details unavailable", tracking)
             return 0, 0
 
         planeMiles = 0
         truckMiles = 0
-        routeData = [] # Each element is a tuple with the latitude, longitude, and time string of each relevant destination
+        routeData = [] # Each element is a tuple with the latitude, longitude, time string, city, and state of each relevant destination
 
         # Make the events in chronological order
-        events.reverse()
-
+        try:
+            events.reverse()
+        except AttributeError:
+            events = [events] # make events a list
+        city = ''
+        state = ''
         # Extrapolate coordinates and datetime of each relevant event
         for e in events:
             if e['EventZIPCode'] is not None:
+                t1 = timer()
                 zipCode = e['EventZIPCode']
                 #print("zipCode", str(zipCode), "event city", e['EventCity'])
 
                 if e['Event'] != 'Out for Delivery':
-                    location = self.locate(zipCode)
-                    if location:
-                        # Safeguard in case this event doesn't have a time, skip this statement and use the time from the prev event
-                        if e['EventTime']:
-                            time = e['EventTime']
-                        routeData.append([location.latitude, location.longitude, e['EventDate']+" "+time])
+                    # location = self.locate(zipCode)
+                    if debugMode:
+                        print("searching by zip", zipCode)
+                    try:
+                        lat, lon, city, state = zipcodes.loc[zipcodes['zipcode'] == zipCode.strip(), ['lat','lon', 'city', 'state']].iloc[0]
+                    except:
+                        # zip was not found in zipcodes df - get using geopandas
+                        location = self.locate(zipCode)
+                        lat, lon = location.latitude, location.longitude
+                        loc = self.geolocator.reverse((lat, lon))
+                        loc = loc.raw['address'] 
+                        if "city" in loc.keys() and "state" in loc.keys():
+                            city = loc['city']
+                            state = loc['state']
+                    # if location:
+                    # Safeguard in case this event doesn't have a time, skip this statement and use the time from the prev event
+                    if e['EventTime']:
+                        time = e['EventTime']
+                    # routeData.append([location.latitude, location.longitude, e['EventDate']+" "+time])
+                    # print("Location found from zipcode", zipCode, str(round(timer()-t1, 2)), "sec")
+                    routeData.append([lat, lon, e['EventDate']+" "+time, city, state])
+                    if debugMode:
+                        print("Lat lon found from zipcode", zipCode, str(round(timer()-t1, 2)), "sec")
             else:
+                # print(e)
                 if e['EventCity'] is not None and 'DISTRIBUTION CENTER' in e['EventCity']:
                     if 'INTERNATIONAL' in e['EventCity']:
                         return 0, 0
@@ -139,30 +186,75 @@ class CrowPy(object):
                         sep = ' NETWORK DISTRIBUTION CENTER'
 
                     area = e['EventCity'].split(sep)[0]
+                    # print("area:", area)
+                    
+                    prevCity = city
+                    prevState = state
+                    
+                    if area in self.cityStateOptions.keys():
+                        city, state = self.cityStateOptions[area]
+                    else:
+                        city = area[:len(area)-3]
+                        state = area.replace(city+' ', '')
+                    # location = self.geolocate({"city":city,"state":state})
+                    
+                    try:
+                        lat, lon = zipcodes.loc[(zipcodes['city'] == city.upper().strip()) & (zipcodes['state'] == state.strip()), ['lat', 'lon']].iloc[0]
+                        
+                        routeData.append([lat, lon, e['EventDate']+" "+e['EventTime'], city.strip(), state.strip()])
+                        if debugMode:
+                            print("Lat lon " + str(lat) +" " + str(lon)+ " found from distribution center city "+city+", "+state+" - " + str(round(timer()-t1, 2))+ " sec")
+                    except:
+                        # print("No matching city, ST found for " + city + ", " + state)
+                        # return 0, 0
+                         # if city, state the same as previous, no need to geolocate again
+                        if prevCity == city:
+                            if debugMode:
+                                print("prev city equals city", prevCity)
+                            routeData.append([location.latitude, location.longitude, e['EventDate']+" "+e['EventTime'], city.strip(), state.strip()])
+                        else:
+                            location = self.geolocate({"city":city,"state":state})
 
-                    city = area[:len(area)-3]
-                    state = area.replace(city+' ', '')
-                    location = self.geolocate({"city":city,"state":state})
-                    #print("city:", city)
-                    if not location:
-                        # Get the city the hard way
-                        try:
-                            realCity = self.sectionalCenterFacilities[state][city]
-                        except:
-                            printStr = str(state) + ', ' + str(city) + ', ' + str(tracking)
-                            print("unable to get realCity", printStr)
-                            continue
-                        location = self.geolocate({"city":realCity,"state":state})
-                        #print("realCity:", realCity)
+                            if not location:
+                            # if not lat:
+                                if state == "PR":
+                                    realCity = "Catano"
+                                    state = ""
+                                else: 
+                                    try: # Get the city the hard way
+                                        realCity = self.sectionalCenterFacilities[state][city]
+                                    except:
+                                        printStr = str(city) + ', ' + str(state) + ', ' + str(tracking)
+                                        print("Unable to get sectional center facility for", printStr)
+                                        continue
+                                location = self.geolocate({"city":realCity,"state":state})
+                                if not location:
+                                    print("No matching city found for " + city + " " + state)
+                                    return 0,0
+                                if debugMode:
+                                    print("Location found from sectional center facility in " + city + ", " + state)
+                            else:
+                                if debugMode:
+                                    print("Location found from distribution center geolocate (" + city + ", " + state + ") " + str(round(timer()-t1, 2))+ " sec")
 
-                    routeData.append([location.latitude, location.longitude, e['EventDate']+" "+e['EventTime']])
+                            routeData.append([location.latitude, location.longitude, e['EventDate']+" "+e['EventTime'], city.strip(), state.strip()])
+                            # routeData.append([location.latitude, location.longitude, e['EventDate']+" "+e['EventTime']])
+                            # routeData.append([lat, lon, e['EventDate']+" "+e['EventTime']])
+                            
 
         # Add delivered event to routeData
         summaryEvent = track.result['TrackResponse']['TrackInfo']['TrackSummary']
         zipCode = summaryEvent['EventZIPCode']
-        location = self.geolocate({"postalcode":zipCode})
-        if location:
-            routeData.append([location.latitude, location.longitude, summaryEvent['EventDate']+" "+summaryEvent['EventTime']])
+        if debugMode:
+            print("summaryEvent zip code", str(zipCode))
+        
+        # location = self.geolocate({"postalcode":zipCode})
+        # if location:
+        try:
+            lat, lon, city, state = zipcodes.loc[zipcodes['zipcode'] == zipCode.strip(), ['lat','lon', 'city', 'state']].iloc[0]  
+            routeData.append([lat, lon, summaryEvent['EventDate']+" "+summaryEvent['EventTime'], city.strip(), state.strip()])
+        except:
+            print("unable to get summary event lat lon for zip", str(zipCode))
         
         if osrm:
             return self.translateRouteData(routeData, osrm=True, printSteps = printSteps)
@@ -212,8 +304,16 @@ class CrowPy(object):
             loc = loc['town'] + ", " + loc['state']
         elif "county" in loc.keys() and "state" in loc.keys():
             loc = loc['county'] + ", " + loc['state']
-        else: 
-            print(json.dumps(loc))
+        elif "city_district" in loc.keys() and "state" in loc.keys():
+            loc = loc['city_district'] + ", " + loc['state']
+        elif "postcode" in loc.keys() and "state" in loc.keys():
+            loc = loc['postcode'] + ", " + loc['state']
+        # elif "city" in loc.keys() and "county" in loc.keys():
+        #     loc = loc['city'] + ", " + loc['county']
+        # elif "city_district" in loc.keys() and "county" in loc.keys():
+        #     loc = loc['city_district'] + ", " + loc['county']
+        # else:
+        #     print(json.dumps(loc))
         return loc
     
     def translateRouteData(self, routeData, osrm, printSteps):
@@ -234,12 +334,15 @@ class CrowPy(object):
         # The following pieces of data are from https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3835347/
         detourIndex = 1.417 # Slope of travel distance (km) vs straight-line distance (km)
         travelTimeIndex = 1.056 # Slope of travel time (min) vs travel distance (km), not in use
-
+        # print(routeData)
+        
         for i in range(len(routeData)-1):
             start = routeData[i]
             startTuple = (start[0],start[1])
             dest = routeData[i+1]
             destTuple = (dest[0], dest[1])
+            
+            # print("start:", start, " dest:", dest)
             
             if startTuple == destTuple:
                 continue
@@ -248,13 +351,26 @@ class CrowPy(object):
             miles = distance.distance(startTuple, destTuple).miles
             
             # get a readable version of start & end location for debugging
-            startLoc = self.getCityStateFromLatLon(startTuple)
-            endLoc = self.getCityStateFromLatLon(destTuple)
+            # startLoc = self.getCityStateFromLatLon(startTuple)
+            # endLoc = self.getCityStateFromLatLon(destTuple)
+            startLoc = start[3].title() + ", " + start[4]
+            endLoc = dest[3].title() + ", " + dest[4]
+            
+            # if not isinstance(startLoc, str):
+            #     print("Unable to locate start loc:", startLoc)
+            #     continue
+            # if not isinstance(endLoc, str):
+            #     print("Unable to locate end loc:", endLoc)
+            #     continue
 
             if hours > 0:
-                if miles > 500:
+                groundMiles = miles * detourIndex
+                mph = miles / hours
+
+                if mph > 50: # and miles > 100:
+                # if miles > 500:
                     if printSteps:
-                        print(str(round(miles,1))+ " plane miles from "+ startLoc + " to "+ endLoc)
+                        print(str(round(miles,1))+ " air miles from "+ startLoc + " to "+ endLoc + " (over " + str(round(hours,1)) + " hours, avg "+ str(round(mph, 1)) + " mph)")
                     planeMiles += miles
                 else:
                     if osrm: ## get actual route using OSRM API to map a car route
@@ -264,16 +380,20 @@ class CrowPy(object):
 
                         # get a recommended route
                         routes = json.loads(my_bytes_value.decode('utf8'))
-                        route = routes.get("routes")[0]
+                        try:
+                            route = routes.get("routes")[0]
+                        except:
+                            print("No ground route found between "+startLoc+" and "+endLoc)
+                            return 0,0
                         # convert meters to miles
                         miles = route['distance']/1609.34
                         if printSteps:
-                            print(str(round(miles,1))+ " ground miles from "+ startLoc + " to "+ endLoc)
+                            print(str(round(miles,1))+ " ground miles from "+ startLoc + " to "+ endLoc+ " (over " + str(round(hours,1)) + " hours, avg "+ str(round(mph, 1)) + " mph)")
                         truckMiles += miles
                     else:
                         if printSteps:
-                            print(str(round( miles * detourIndex ,1))+ " ground miles from "+ startLoc + " to "+ endLoc)
-                        truckMiles += miles * detourIndex
+                            print(str(round( groundMiles ,1))+ " ground miles from "+ startLoc + " to "+ endLoc+ " (over " + str(round(hours,1)) + " hours, avg "+ str(round(mph, 1)) + " mph)")
+                        truckMiles += groundMiles
                     
         return truckMiles, planeMiles
 
