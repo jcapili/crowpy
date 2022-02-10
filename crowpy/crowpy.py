@@ -11,7 +11,7 @@ import json
 from timeit import default_timer as timer
 import math
 
-zipcodes = pd.read_csv("spree_public_zipcodes.csv", dtype={'zipcode': str, 'city': str, 'lat': float, 'lon':float, 'state':str})
+zipcodes = pd.read_csv("spree_public_zipcodes.csv", dtype={'zipcode': 'str', 'city': 'str', 'lat': float, 'lon':float, 'state':str})
 zipcodes['city'] = zipcodes['city'].str.upper()
 zipcodes = zipcodes.dropna(subset=['lat', 'lon'])
 
@@ -47,7 +47,8 @@ class CrowPy(object):
             'EASTERN': 'Hampden'
         },
         'MD': {
-            'SOUTHERN MARYLAND': 'Capitol Heights',
+            'SOUTHERN MARYLAND': 'Waldorf',
+            'SOUTHERN': 'Waldorf',
             'SUBURBAN MARYLAND': 'Gaithersburg',
             'EASTERN SHORE': 'Easton'
         },
@@ -147,10 +148,11 @@ class CrowPy(object):
         state = ''
         # Extrapolate coordinates and datetime of each relevant event
         for e in events:
+            # print(e)
             if e['EventZIPCode'] is not None:
                 t1 = timer()
                 zipCode = e['EventZIPCode']
-                #print("zipCode", str(zipCode), "event city", e['EventCity'])
+                # print("zipCode", str(zipCode), "event city", e['EventCity'])
 
                 if e['Event'] != 'Out for Delivery':
                     # location = self.locate(zipCode)
@@ -177,7 +179,6 @@ class CrowPy(object):
                     if debugMode:
                         print("Lat lon found from zipcode", zipCode, str(round(timer()-t1, 2)), "sec")
             else:
-                # print(e)
                 if e['EventCity'] is not None and 'DISTRIBUTION CENTER' in e['EventCity']:
                     if 'INTERNATIONAL' in e['EventCity']:
                         return 0, 0
@@ -186,6 +187,7 @@ class CrowPy(object):
                         sep = ' NETWORK DISTRIBUTION CENTER'
 
                     area = e['EventCity'].split(sep)[0]
+                    area = area.strip()
                     # print("area:", area)
                     
                     prevCity = city
@@ -197,6 +199,13 @@ class CrowPy(object):
                         city = area[:len(area)-3]
                         state = area.replace(city+' ', '')
                     # location = self.geolocate({"city":city,"state":state})
+                    # print("city:", city, "state:", state) 
+                    
+                    try: # Get the city from dict
+                        city = self.sectionalCenterFacilities[state][city]
+                    except KeyError:
+                        # print("KeyError")
+                        pass
                     
                     try:
                         lat, lon = zipcodes.loc[(zipcodes['city'] == city.upper().strip()) & (zipcodes['state'] == state.strip()), ['lat', 'lon']].iloc[0]
@@ -367,7 +376,7 @@ class CrowPy(object):
                 groundMiles = miles * detourIndex
                 mph = miles / hours
 
-                if mph > 50: # and miles > 100:
+                if (mph > 55) | (start[4] in ['HI', 'PR','VI']) | (dest[4] in ['HI', 'PR','VI']):# and state is HI, PR, VI, ...
                 # if miles > 500:
                     if printSteps:
                         print(str(round(miles,1))+ " air miles from "+ startLoc + " to "+ endLoc + " (over " + str(round(hours,1)) + " hours, avg "+ str(round(mph, 1)) + " mph)")
