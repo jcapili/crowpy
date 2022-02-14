@@ -11,9 +11,12 @@ import json
 from timeit import default_timer as timer
 import math
 
-zipcodes = pd.read_csv("spree_public_zipcodes.csv", dtype={'zipcode': 'str', 'city': 'str', 'lat': float, 'lon':float, 'state':str})
-zipcodes['city'] = zipcodes['city'].str.upper()
-zipcodes = zipcodes.dropna(subset=['lat', 'lon'])
+# zipcode data from https://redivis.com/datasets/d5sz-fq0mbm2ty
+zipcodes = pd.read_csv("zip_code_database.csv", usecols = ['zip', 'primary_city', 'state','irs_estimated_population', 'latitude', 'longitude'], 
+                       dtype={'zip': 'str', 'primary_city': 'str', 'latitude': float, 'longitude':float, 'state':'str', 'irs_estimated_population':'str'})
+zipcodes['primary_city'] = zipcodes['primary_city'].str.title()
+zipcodes = zipcodes.sort_values(by='irs_estimated_population', ascending=False)
+zipcodes = zipcodes.dropna(subset=['latitude', 'longitude'])
 
 class CrowPy(object):
     # https://github.com/geopy/geopy/issues/124
@@ -25,7 +28,7 @@ class CrowPy(object):
     sectionalCenterFacilities = {
         'CA':{
             'NORTH BAY': 'San Francisco',
-            'CITY OF INDUSTRY': 'West Covina'
+            # 'CITY OF INDUSTRY': 'West Covina'
         },
         'CT':{
             'SOUTHERN': 'Wallingford',
@@ -117,7 +120,7 @@ class CrowPy(object):
         # print tracking
         track = self.usps.track(tracking)
         if 'Error' in track.result['TrackResponse']['TrackInfo']:
-            print("Tracking label is invalid:", tracking)
+            print("Tracking label "+tracking+" is invalid - "+track.result['TrackResponse']['TrackInfo'])
             return 0, 0
         
         if 'TrackSummary' not in track.result['TrackResponse']['TrackInfo'].keys():
@@ -126,7 +129,7 @@ class CrowPy(object):
 
         summaryEvent = track.result['TrackResponse']['TrackInfo']['TrackSummary']
         if 'Delivered' not in summaryEvent['Event']:
-            print("Package has not yet been delivered", tracking)
+            print("Package has not yet been delivered", tracking, "-", summaryEvent['Event'])
             return 0, 0
 
         try:
@@ -155,11 +158,11 @@ class CrowPy(object):
                 # print("zipCode", str(zipCode), "event city", e['EventCity'])
 
                 if e['Event'] != 'Out for Delivery':
-                    # location = self.locate(zipCode)
-                    if debugMode:
-                        print("searching by zip", zipCode)
+                    # first try to find zip in data file. if not found, geolocate using zip.
                     try:
-                        lat, lon, city, state = zipcodes.loc[zipcodes['zipcode'] == zipCode.strip(), ['lat','lon', 'city', 'state']].iloc[0]
+                        lat, lon, city, state = zipcodes.loc[zipcodes['zip'] == zipCode.strip(), ['latitude','longitude', 'primary_city', 'state']].iloc[0]
+                        if debugMode:
+                            print("Lat lon "+str(lat)+", "+str(lon)+" found from zipcode lookup "+zipCode+" - "+str(round(timer()-t1, 2))+" sec")
                     except:
                         # zip was not found in zipcodes df - get using geopandas
                         location = self.locate(zipCode)
@@ -169,6 +172,8 @@ class CrowPy(object):
                         if "city" in loc.keys() and "state" in loc.keys():
                             city = loc['city']
                             state = loc['state']
+                        if debugMode:
+                            print("Lat lon "+str(lat)+", "+str(lon)+" found from zipcode geolocate "+zipCode+" - "+str(round(timer()-t1, 2))+" sec")
                     # if location:
                     # Safeguard in case this event doesn't have a time, skip this statement and use the time from the prev event
                     if e['EventTime']:
@@ -176,13 +181,13 @@ class CrowPy(object):
                     # routeData.append([location.latitude, location.longitude, e['EventDate']+" "+time])
                     # print("Location found from zipcode", zipCode, str(round(timer()-t1, 2)), "sec")
                     routeData.append([lat, lon, e['EventDate']+" "+time, city, state])
-                    if debugMode:
-                        print("Lat lon found from zipcode", zipCode, str(round(timer()-t1, 2)), "sec")
             else:
                 if e['EventCity'] is not None and 'DISTRIBUTION CENTER' in e['EventCity']:
                     if 'INTERNATIONAL' in e['EventCity']:
-                        return 0, 0
-                    sep = ' DISTRIBUTION CENTER'
+                        print(e['EventCity'])
+                        sep = ' INTERNATIONAL DISTRIBUTION CENTER'
+                    else:
+                        sep = ' DISTRIBUTION CENTER'
                     if 'NETWORK' in e['EventCity']:
                         sep = ' NETWORK DISTRIBUTION CENTER'
 
@@ -208,14 +213,12 @@ class CrowPy(object):
                         pass
                     
                     try:
-                        lat, lon = zipcodes.loc[(zipcodes['city'] == city.upper().strip()) & (zipcodes['state'] == state.strip()), ['lat', 'lon']].iloc[0]
+                        lat, lon = zipcodes.loc[(zipcodes['primary_city'] == city.title().strip()) & (zipcodes['state'] == state.strip()), ['latitude', 'longitude']].iloc[0]
                         
                         routeData.append([lat, lon, e['EventDate']+" "+e['EventTime'], city.strip(), state.strip()])
                         if debugMode:
                             print("Lat lon " + str(lat) +" " + str(lon)+ " found from distribution center city "+city+", "+state+" - " + str(round(timer()-t1, 2))+ " sec")
                     except:
-                        # print("No matching city, ST found for " + city + ", " + state)
-                        # return 0, 0
                          # if city, state the same as previous, no need to geolocate again
                         if prevCity == city:
                             if debugMode:
@@ -254,16 +257,18 @@ class CrowPy(object):
         # Add delivered event to routeData
         summaryEvent = track.result['TrackResponse']['TrackInfo']['TrackSummary']
         zipCode = summaryEvent['EventZIPCode']
-        if debugMode:
-            print("summaryEvent zip code", str(zipCode))
         
-        # location = self.geolocate({"postalcode":zipCode})
-        # if location:
         try:
-            lat, lon, city, state = zipcodes.loc[zipcodes['zipcode'] == zipCode.strip(), ['lat','lon', 'city', 'state']].iloc[0]  
+            lat, lon, city, state = zipcodes.loc[zipcodes['zip'] == zipCode.strip(), ['latitude','longitude', 'primary_city', 'state']].iloc[0]  
             routeData.append([lat, lon, summaryEvent['EventDate']+" "+summaryEvent['EventTime'], city.strip(), state.strip()])
+            if debugMode:
+                print("delivered to "+str(lat)+", "+str(lon)+" found by zip code lookup "+str(zipCode))
         except:
-            print("unable to get summary event lat lon for zip", str(zipCode))
+            location = self.geolocate({"postalcode":zipCode})
+            if location:
+                routeData.append([location.latitude, location.longitude, summaryEvent['EventDate']+" "+summaryEvent['EventTime'], '', ''])
+                if debugMode:
+                    print("delivered to "+str(lat)+", "+str(lon)+" found by geolocate "+str(zipCode))
         
         if osrm:
             return self.translateRouteData(routeData, osrm=True, printSteps = printSteps)
@@ -304,27 +309,6 @@ class CrowPy(object):
                 return self.locate(newZip, (jump*-1)-1)
     
     
-    def getCityStateFromLatLon(self, locTuple):
-        loc = self.geolocator.reverse(locTuple)
-        loc = loc.raw['address'] 
-        if "city" in loc.keys() and "state" in loc.keys():
-            loc = loc['city'] + ", " + loc['state']
-        elif "town" in loc.keys() and "state" in loc.keys():
-            loc = loc['town'] + ", " + loc['state']
-        elif "county" in loc.keys() and "state" in loc.keys():
-            loc = loc['county'] + ", " + loc['state']
-        elif "city_district" in loc.keys() and "state" in loc.keys():
-            loc = loc['city_district'] + ", " + loc['state']
-        elif "postcode" in loc.keys() and "state" in loc.keys():
-            loc = loc['postcode'] + ", " + loc['state']
-        # elif "city" in loc.keys() and "county" in loc.keys():
-        #     loc = loc['city'] + ", " + loc['county']
-        # elif "city_district" in loc.keys() and "county" in loc.keys():
-        #     loc = loc['city_district'] + ", " + loc['county']
-        # else:
-        #     print(json.dumps(loc))
-        return loc
-    
     def translateRouteData(self, routeData, osrm, printSteps):
         """
         Split the route data into chunks traveled by plane and truck. 
@@ -343,7 +327,7 @@ class CrowPy(object):
         # The following pieces of data are from https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3835347/
         detourIndex = 1.417 # Slope of travel distance (km) vs straight-line distance (km)
         travelTimeIndex = 1.056 # Slope of travel time (min) vs travel distance (km), not in use
-        # print(routeData)
+        # print("routeData", str(routeData))
         
         for i in range(len(routeData)-1):
             start = routeData[i]
@@ -360,8 +344,6 @@ class CrowPy(object):
             miles = distance.distance(startTuple, destTuple).miles
             
             # get a readable version of start & end location for debugging
-            # startLoc = self.getCityStateFromLatLon(startTuple)
-            # endLoc = self.getCityStateFromLatLon(destTuple)
             startLoc = start[3].title() + ", " + start[4]
             endLoc = dest[3].title() + ", " + dest[4]
             
@@ -372,12 +354,13 @@ class CrowPy(object):
             #     print("Unable to locate end loc:", endLoc)
             #     continue
 
+            # print(str(hours), "hours")
             if hours > 0:
                 groundMiles = miles * detourIndex
                 mph = miles / hours
 
-                if (mph > 55) | (start[4] in ['HI', 'PR','VI']) | (dest[4] in ['HI', 'PR','VI']):# and state is HI, PR, VI, ...
-                # if miles > 500:
+                # should be air if mph > 55 and miles > 60, or if it goes through HI, PR, or VI
+                if (mph > 55) & (miles > 60) | (start[4] in ['HI', 'PR','VI']) | (dest[4] in ['HI', 'PR','VI']):
                     if printSteps:
                         print(str(round(miles,1))+ " air miles from "+ startLoc + " to "+ endLoc + " (over " + str(round(hours,1)) + " hours, avg "+ str(round(mph, 1)) + " mph)")
                     planeMiles += miles
