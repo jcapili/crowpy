@@ -28,8 +28,7 @@ def runCrowpy(api_username, cartons_filename, output_combined_filename, minSampI
     crow = CrowPy(api_username)
     USPSCartons = pd.read_csv(cartons_filename)
     USPSCartons['carton_id'] = USPSCartons['carton_id'].astype(str)
-    USPSCartons['origin_addr'] = np.where(np.isin(USPSCartons['stock_location_id'], [2, 3, 4, 5]),'1717 East Lawson St, Durham, NC 27703','911 Linda Way, Sparks, NV 89431')
-    USPSCartons = USPSCartons[~USPSCartons['state_abbr'].isin(['AK', 'HI', 'PR', 'VI'])]
+    # USPSCartons = USPSCartons[~USPSCartons['state_abbr'].isin(['AK', 'HI', 'PR', 'VI'])]
 
     already_processed = pd.read_csv(output_combined_filename)
     already_processed['carton_id'] = already_processed['carton_id'].astype(str)
