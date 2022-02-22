@@ -21,28 +21,61 @@ pip install crowpy
 Before you begin, you'll also need to register for a USPS API key [here](https://www.usps.com/business/web-tools-apis/welcome.htm).
 
 ## Usage
-**Single Tracking Numbers**
+### calculateMiles()
+- Inputs
+    - **tracking**: A str of the USPS tracking number
+    - **osrm**: flag; if True, use Open Street Map (OSRM) API to calculate ground miles via the shortest car route between the origin and destination. Otherwise, use a simple detour index detailed in [this](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3835347/) national study, where the detour index defined as travel distance divided by straight-line distance. Note that this detour index may suffice for short travel distances since it was calculated using a dataset involving distances to hospitals, but for USPS data, OSRM will likely be more accurate since shipping distances are often hundreds of miles. 
+    
+    <img src="images/study.png" alt="Distance study" width="500"/>
+    
+    - **printSteps**: flag; if True, print details for each leg of the journey (ground miles, air miles, origin and destination city + state, time between legs, estimated MPH)
+    - **debugMode**: flag; if True will print details for each segment of the route for debugging purposes (whether the lat & lon were found via zipcode lookup, geolocate using the zipcode, or geolocate using the distribution city name, how many sec it took to process each step).
+- Outputs
+    - **truckMiles**: Number of miles the package traveled on the ground. For a given leg, calculate MPH as geodesic miles / time since the last event. If mph > 55 and miles > 60, or if either the origin or dest is HI, PR, or VI, then consider the leg as traveled via air. Otherwise, assume it traveled via ground.
+    - **planeMiles**: Number of miles the package traveled via air (geodesic distance).
+    - **routeData**: a list of details about each leg of the journey (same info printed via printSteps).
+
+### Single Tracking Numbers
 ```python
 from crowpy import *
 
 cp = CrowPy("your_USPS_API_key")
-cp.calculateMiles("your_tracking_number")
+cp.calculateMiles("your_tracking_number", osrm=True, printSteps = True, debugMode=False)
 ```
-*Sample Output:* (283.06504755633324, 0)
-This function returns a tuple with the truck miles and plane miles, respectively. 
+*Sample Output:* 
+```
+10.8 ground miles from Sparks, NV to Reno, NV (over 1.2 hours, avg 5.8 mph)
+557.6 ground miles from Reno, NV to Portland, OR (over 54.7 hours, avg 8.0 mph)
+278.0 ground miles from Portland, OR to Union, OR (over 26.8 hours, avg 8.8 mph)
 
-To get the data according to Google Maps, use the same function, and set the `google` flag to `True`:
+(846.4458100836368,
+ 0,
+ ['10.8 ground miles from Sparks, NV to Reno, NV (over 1.2 hours, avg 5.8 mph)',
+  '557.6 ground miles from Reno, NV to Portland, OR (over 54.7 hours, avg 8.0 mph)',
+  '278.0 ground miles from Portland, OR to Union, OR (over 26.8 hours, avg 8.8 mph)'])
+```
+
+With debugMode on:
 ```python
-from crowpy import *
-
-cp = CrowPy("your_USPS_API_key")
-cp.calculateMiles("your_tracking_number", True)
+cp.calculateMiles("your_tracking_number", osrm=True, printSteps = False, debugMode=True)
 ```
-This function returns the same tuple but with truck miles according to Google Maps, and it prints links similar to [this one](https://www.google.com/maps/dir/+34.1341,-118.3215/+33.9850,-118.4695/+33.8121,-117.9190/) with the corresponding driving data.
+*Sample Output:*
+```
+Lat lon 39.54, -119.75 found from zipcode lookup 89431 - 0.01 sec
+Lat lon 39.48 -119.86 found from distribution center city RENO, NV - 0.01 sec
+Lat lon 45.51, -122.59 found from zipcode lookup 97215 - 0.0 sec
+Lat lon 45.51, -122.59 found from zipcode lookup 97215 - 0.0 sec
+Lat lon 45.15, -117.77 found from zipcode lookup 97883 - 0.0 sec
+Delivered to 45.15, -117.77 found by zipcode lookup 97883
 
-<img src="images/map_example.png" alt="Google Maps example" width="600"/>
+(846.4458100836368,
+ 0,
+ ['10.8 ground miles from Sparks, NV to Reno, NV (over 1.2 hours, avg 5.8 mph)',
+  '557.6 ground miles from Reno, NV to Portland, OR (over 54.7 hours, avg 8.0 mph)',
+  '278.0 ground miles from Portland, OR to Union, OR (over 26.8 hours, avg 8.8 mph)'])`
+```
 
-**CSV's**
+### Tracking numbers stored in CSV's
 ```python
 from crowpy import *
 
@@ -62,18 +95,14 @@ cp.calculateCSVMiles("~/path/to/input/CSV", "~/path/to/output/CSV", False, False
 ```
 *Note*: The data is saved per CrowPy instance, so if the original CrowPy instance is overwritten or reset, the associated data will also be lost. Therefore this function works best in a shell as opposed to a script. Use Ctrl+Z to interrupt this function if necessary.
 
+### Another example using tracking numbers stored in a CSV
+There's another example of how you can use Crowpy in `usage/crowpyClient.py`. The function `runCrowpy` allows you to specify start and end index values of a sample to take of a given input file containing unique `carton_id` and `tracking` numbers. On average, it takes around 2 seconds to process a single tracking number, so splitting up a large file can be useful if you want to take a sample of all shipments, for example, instead of dedicating hours to process the entire batch. The function will create 3 columns: `ground_miles`, `air_miles`, and `route_data_details_list`. It can be useful to keep track of `route_data_details_list` if you want to keep track of specific cities each package has to travel through, or the breakdown of the ground/air miles between the different legs of each shipment.
+
 ## Accuracy
 There is no third-party entity I know of that can be used to verify the accuracy of these functions. However, these functions have been tested and spot checked using Google Maps, which is probably the foremost tool for verifying the accuracy.
 
-The most likely point of inaccuracy is calculating driving distance, which is often very different from the distance as the crow flies (hence the name of this project). So the driving miles are calculated based on the 1.417 detour index from [this](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3835347/) national study, where the detour index defined as travel distance divided by straight-line distance. 
-
-<img src="images/study.png" alt="Distance study" width="500"/>
-
-The "google" boolean flag in the `calculateMiles` function will provide links to Google Maps routes that can be used to spot check the accuracy of this detour index on a case-by-case basis. But based on past tests, the detour index calculations are typically an overestimate of the Google Maps calculations, which often is preferred so that you can be relatively confident you're *totally* offsetting all shipping-related emissions.
-
 ## Known Bugs
 * There are a *lot* of USPS distribution centers, so it's very possible that the code is unable to accurately locate certain network distribution centers. However, the USPS events following an unfound network distribution center are typically in the same city, so the distance calculations should still be relatively accurate.
-* The Google Maps option of the calculateMiles function will eventually get blocked by Google if you attempt too many calls.
 * I have excluded APO deliveries for ease of implementation but can add it in if that is a highly requested feature.
 
 ## Contributions

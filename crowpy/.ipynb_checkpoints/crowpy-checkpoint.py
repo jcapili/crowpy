@@ -3,16 +3,14 @@ from geopy.geocoders import Nominatim
 import geopy.geocoders
 from geopy import distance
 from datetime import datetime, timedelta
-from tqdm.auto import trange
 from tqdm import tqdm
 import requests, re, os, ssl, certifi
 import pandas as pd
 import json
 from timeit import default_timer as timer
-import math
 
 # zipcode data from https://redivis.com/datasets/d5sz-fq0mbm2ty
-zipcodes = pd.read_csv("zip_code_database.csv", usecols = ['zip', 'primary_city', 'state','irs_estimated_population', 'latitude', 'longitude'], 
+zipcodes = pd.read_csv("crowpy/data/zip_code_database_redivis.csv", usecols = ['zip', 'primary_city', 'state','irs_estimated_population', 'latitude', 'longitude'], 
                        dtype={'zip': 'str', 'primary_city': 'str', 'latitude': float, 'longitude':float, 'state':'str', 'irs_estimated_population':'str'})
 zipcodes['primary_city'] = zipcodes['primary_city'].str.title()
 zipcodes = zipcodes.sort_values(by='irs_estimated_population', ascending=False)
@@ -25,6 +23,7 @@ class CrowPy(object):
     geolocator = Nominatim(user_agent="CrowPy")
 
     # https://en.wikipedia.org/wiki/Sectional_center_facility
+    # Certain distribuion centers don't list city names that can be found in standard lat/lon lookups. Keep track of these distribution centers here and replace the city name with a more useful one.
     sectionalCenterFacilities = {
         'CA':{
             'NORTH BAY': 'San Francisco',
@@ -83,6 +82,7 @@ class CrowPy(object):
         }
     }
     
+    # Certain distribution centers which aren't returned as 'City, ST' and must be specififed manually.
     cityStateOptions = {"WEST FARGO": ("West Fargo", "ND"),
                     "ATLANTA NORTH METRO": ("Atlanta", "GA"),
                     "SALT LAKE CITY": ("Salt Lake City", "UT"),
@@ -112,31 +112,42 @@ class CrowPy(object):
         Calculate the number of plane/truck miles from a USPS shipment
 
         Inputs
-            -tracking: A str of the USPS tracking number
+            - tracking: A str of the USPS tracking number
+            - osrm: flag to indicate whether to use OSRM API to calculate ground miles via the shortest car route, or using a simple detour index. Note that a detour index may suffice for short distances since it was determined using a dataset involving distances to hospitals, but for USPS data OSRM will likely be more accurate since distances are often hundreds of miles.
+            - printSteps: flag to indicate whether running in debug mode or not. If True, will print details for each leg of the journey.
+            - debugMode: if True will print details for each segment of the route (for debugging purposes)
         Outputs
-            -truckMiles: An int of the # of miles the package traveled in a truck
-            -planeMiles: ^ Same but a plane
+            - truckMiles: An int of the # of miles the package traveled in a truck
+            - planeMiles: ^ Same but a plane
+            - routeData: a list of details about each leg of the journey (ground miles, air miles, origin and destination city + state, time between legs, estimated MPH)
         """
-        # print tracking
         track = self.usps.track(tracking)
         if 'Error' in track.result['TrackResponse']['TrackInfo']:
-            print("Tracking label "+tracking+" is invalid - "+track.result['TrackResponse']['TrackInfo'])
-            return 0, 0
-        
+            try:
+                printStr = "Tracking label "+tracking+" is invalid - "+str(track.result['TrackResponse']['TrackInfo']['Error']['Description'])
+                print(printStr)
+            except:
+                printStr = "Tracking label "+tracking+" is invalid - "+str(track.result['TrackResponse']['TrackInfo'])
+                print(printStr)
+
+            return 0, 0, [printStr]
+                
         if 'TrackSummary' not in track.result['TrackResponse']['TrackInfo'].keys():
-            print("Package has not yet been delivered", tracking)
-            return 0, 0
+            printStr = "Package has not yet been delivered"+ tracking
+            return 0, 0, [printStr]
 
         summaryEvent = track.result['TrackResponse']['TrackInfo']['TrackSummary']
         if 'Delivered' not in summaryEvent['Event']:
-            print("Package has not yet been delivered", tracking, "-", summaryEvent['Event'])
-            return 0, 0
+            printStr = "Package has not yet been delivered "+ tracking+" - "+" "+summaryEvent['Event']
+            print(printStr)
+            return 0, 0, [printStr]
 
         try:
             events = track.result['TrackResponse']['TrackInfo']['TrackDetail']
         except:
-            print("Unable to track the miles for this package: Tracking details unavailable", tracking)
-            return 0, 0
+            printStr = "Unable to track the miles for this package: Tracking details unavailable - "+tracking
+            print(printStr)
+            return 0, 0, [printStr]
 
         planeMiles = 0
         truckMiles = 0
@@ -146,19 +157,20 @@ class CrowPy(object):
         try:
             events.reverse()
         except AttributeError:
-            events = [events] # make events a list
+            # catch AttributeError if there's only one event
+            events = [events] # make events a single-element list
+            
         city = ''
         state = ''
-        # Extrapolate coordinates and datetime of each relevant event
+        
+        # Extrapolate coordinates/zipcode and datetime of each relevant event
         for e in events:
-            # print(e)
             if e['EventZIPCode'] is not None:
                 t1 = timer()
                 zipCode = e['EventZIPCode']
-                # print("zipCode", str(zipCode), "event city", e['EventCity'])
 
                 if e['Event'] != 'Out for Delivery':
-                    # first try to find zip in data file. if not found, geolocate using zip.
+                    # First try to get lat/lon by searching for zip in zipcode data file. If not found, geolocate using zipcode.
                     try:
                         lat, lon, city, state = zipcodes.loc[zipcodes['zip'] == zipCode.strip(), ['latitude','longitude', 'primary_city', 'state']].iloc[0]
                         if debugMode:
@@ -174,12 +186,9 @@ class CrowPy(object):
                             state = loc['state']
                         if debugMode:
                             print("Lat lon "+str(lat)+", "+str(lon)+" found from zipcode geolocate "+zipCode+" - "+str(round(timer()-t1, 2))+" sec")
-                    # if location:
                     # Safeguard in case this event doesn't have a time, skip this statement and use the time from the prev event
                     if e['EventTime']:
                         time = e['EventTime']
-                    # routeData.append([location.latitude, location.longitude, e['EventDate']+" "+time])
-                    # print("Location found from zipcode", zipCode, str(round(timer()-t1, 2)), "sec")
                     routeData.append([lat, lon, e['EventDate']+" "+time, city, state])
             else:
                 if e['EventCity'] is not None and 'DISTRIBUTION CENTER' in e['EventCity']:
@@ -193,66 +202,45 @@ class CrowPy(object):
 
                     area = e['EventCity'].split(sep)[0]
                     area = area.strip()
-                    # print("area:", area)
                     
                     prevCity = city
                     prevState = state
                     
+                    # Some distribution centers don't list 'City, ST'. If the area name is one of these areas, set it from this dict.
                     if area in self.cityStateOptions.keys():
                         city, state = self.cityStateOptions[area]
                     else:
                         city = area[:len(area)-3]
                         state = area.replace(city+' ', '')
-                    # location = self.geolocate({"city":city,"state":state})
-                    # print("city:", city, "state:", state) 
                     
-                    try: # Get the city from dict
+                    # If the city, state is included as a scenario where the city name itself is not found via geolocate or lookup in zipcode table, set the city from this dict
+                    try:
                         city = self.sectionalCenterFacilities[state][city]
                     except KeyError:
-                        # print("KeyError")
                         pass
                     
                     try:
+                        # Get lat & lon from zipcode table where city and state are an exact match
                         lat, lon = zipcodes.loc[(zipcodes['primary_city'] == city.title().strip()) & (zipcodes['state'] == state.strip()), ['latitude', 'longitude']].iloc[0]
-                        
                         routeData.append([lat, lon, e['EventDate']+" "+e['EventTime'], city.strip(), state.strip()])
                         if debugMode:
                             print("Lat lon " + str(lat) +" " + str(lon)+ " found from distribution center city "+city+", "+state+" - " + str(round(timer()-t1, 2))+ " sec")
                     except:
-                         # if city, state the same as previous, no need to geolocate again
+                         # If city, state the same as previous, no need to geolocate again
                         if prevCity == city:
                             if debugMode:
                                 print("prev city equals city", prevCity)
                             routeData.append([location.latitude, location.longitude, e['EventDate']+" "+e['EventTime'], city.strip(), state.strip()])
                         else:
+                            # If a matching city/state was not found in zipcode database, geolocate using the city & state
                             location = self.geolocate({"city":city,"state":state})
 
                             if not location:
-                            # if not lat:
-                                if state == "PR":
-                                    realCity = "Catano"
-                                    state = ""
-                                else: 
-                                    try: # Get the city the hard way
-                                        realCity = self.sectionalCenterFacilities[state][city]
-                                    except:
-                                        printStr = str(city) + ', ' + str(state) + ', ' + str(tracking)
-                                        print("Unable to get sectional center facility for", printStr)
-                                        continue
-                                location = self.geolocate({"city":realCity,"state":state})
-                                if not location:
-                                    print("No matching city found for " + city + " " + state)
-                                    return 0,0
-                                if debugMode:
-                                    print("Location found from sectional center facility in " + city + ", " + state)
-                            else:
-                                if debugMode:
-                                    print("Location found from distribution center geolocate (" + city + ", " + state + ") " + str(round(timer()-t1, 2))+ " sec")
-
+                                print("No matching city found for " + city + " " + state)
+                                return 0,0, []
+                            if debugMode:
+                                print("Location found from distribution center geolocate (" + city + ", " + state + ") " + str(round(timer()-t1, 2))+ " sec")
                             routeData.append([location.latitude, location.longitude, e['EventDate']+" "+e['EventTime'], city.strip(), state.strip()])
-                            # routeData.append([location.latitude, location.longitude, e['EventDate']+" "+e['EventTime']])
-                            # routeData.append([lat, lon, e['EventDate']+" "+e['EventTime']])
-                            
 
         # Add delivered event to routeData
         summaryEvent = track.result['TrackResponse']['TrackInfo']['TrackSummary']
@@ -262,18 +250,15 @@ class CrowPy(object):
             lat, lon, city, state = zipcodes.loc[zipcodes['zip'] == zipCode.strip(), ['latitude','longitude', 'primary_city', 'state']].iloc[0]  
             routeData.append([lat, lon, summaryEvent['EventDate']+" "+summaryEvent['EventTime'], city.strip(), state.strip()])
             if debugMode:
-                print("delivered to "+str(lat)+", "+str(lon)+" found by zip code lookup "+str(zipCode))
+                print("Delivered to "+str(lat)+", "+str(lon)+" found by zipcode lookup "+str(zipCode))
         except:
             location = self.geolocate({"postalcode":zipCode})
             if location:
                 routeData.append([location.latitude, location.longitude, summaryEvent['EventDate']+" "+summaryEvent['EventTime'], '', ''])
                 if debugMode:
-                    print("delivered to "+str(lat)+", "+str(lon)+" found by geolocate "+str(zipCode))
+                    print("Delivered to "+str(lat)+", "+str(lon)+" found by geolocate "+str(zipCode))
         
-        if osrm:
-            return self.translateRouteData(routeData, osrm=True, printSteps = printSteps)
-        else:
-            return self.translateRouteData(routeData, osrm=False, printSteps = printSteps)
+        return self.translateRouteData(routeData, osrm, printSteps = printSteps)
         
     def locate(self, zipCode, jump = -1):
         """
@@ -316,56 +301,51 @@ class CrowPy(object):
         
         Inputs
             -routeData = a list of lists where each element of the child list is in the following format:
-                [latitude, longitude, datetime of event]
+                [latitude, longitude, datetime of event, city, state]
+            - osrm: flag to indicate whether to use OSRM API to calculate ground miles via the shortest car route, or using a simple detour index. Note that a detour index may suffice for short distances since it was determined using a dataset involving distances to hospitals, but for USPS data OSRM will likely be more accurate since distances are often hundreds of miles.
+            - printSteps: flag to indicate whether running in debug mode or not. If True, will print details for each leg of the journey.
         Outputs
             -truckMiles = float of # miles traveled via truck according to shortest route using osrm
-            -planeMiles = float of # miles traveled via plane according to Geopy distance function
+            -planeMiles = float of # miles traveled via plane according to Geopy distance function (Geodesic distance)
         """
         truckMiles = 0
         planeMiles = 0
+        routeDataDetails = []
         
         # The following pieces of data are from https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3835347/
         detourIndex = 1.417 # Slope of travel distance (km) vs straight-line distance (km)
         travelTimeIndex = 1.056 # Slope of travel time (min) vs travel distance (km), not in use
-        # print("routeData", str(routeData))
         
         for i in range(len(routeData)-1):
             start = routeData[i]
             startTuple = (start[0],start[1])
             dest = routeData[i+1]
             destTuple = (dest[0], dest[1])
-            
-            # print("start:", start, " dest:", dest)
-            
+                        
             if startTuple == destTuple:
                 continue
-                
+            
             hours = (datetime.strptime(dest[2], '%B %d, %Y %I:%M %p') - datetime.strptime(start[2], '%B %d, %Y %I:%M %p')).total_seconds()/float(3600)
             miles = distance.distance(startTuple, destTuple).miles
             
-            # get a readable version of start & end location for debugging
+            # Get City, State for start & end locations
             startLoc = start[3].title() + ", " + start[4]
             endLoc = dest[3].title() + ", " + dest[4]
-            
-            # if not isinstance(startLoc, str):
-            #     print("Unable to locate start loc:", startLoc)
-            #     continue
-            # if not isinstance(endLoc, str):
-            #     print("Unable to locate end loc:", endLoc)
-            #     continue
 
-            # print(str(hours), "hours")
             if hours > 0:
                 groundMiles = miles * detourIndex
                 mph = miles / hours
 
-                # should be air if mph > 55 and miles > 60, or if it goes through HI, PR, or VI
-                if (mph > 55) & (miles > 60) | (start[4] in ['HI', 'PR','VI']) | (dest[4] in ['HI', 'PR','VI']):
+                # If mph > 55 and miles > 60, or if it goes through HI, PR, or VI, then consider the leg as traveled via air.
+                if (mph > 55) & (miles > 60) | (start[4] in ['HI', 'PR','VI', 'GU']) | (dest[4] in ['HI', 'PR','VI','GU']):
+                    routeDataStr = str(round(miles,1))+ " air miles from "+ startLoc + " to "+ endLoc + " (over " + str(round(hours,1)) + " hours, avg "+ str(round(mph, 1)) + " mph)"
+                    routeDataDetails.append(routeDataStr)
                     if printSteps:
-                        print(str(round(miles,1))+ " air miles from "+ startLoc + " to "+ endLoc + " (over " + str(round(hours,1)) + " hours, avg "+ str(round(mph, 1)) + " mph)")
+                        print(routeDataStr)
                     planeMiles += miles
                 else:
-                    if osrm: ## get actual route using OSRM API to map a car route
+                    # Get actual route using OSRM API to map a car route
+                    if osrm:
                         url = "http://router.project-osrm.org/route/v1/car/"+str(startTuple[1])+","+str(startTuple[0])+";"+str(destTuple[1])+","+str(destTuple[0])+"?overview=false"
                         r = requests.get(url)
                         my_bytes_value = r.content
@@ -375,19 +355,24 @@ class CrowPy(object):
                         try:
                             route = routes.get("routes")[0]
                         except:
-                            print("No ground route found between "+startLoc+" and "+endLoc)
-                            return 0,0
+                            printStr = "No ground route found between "+startLoc+" and "+endLoc
+                            print(printStr)
+                            return 0,0,[printStr]
                         # convert meters to miles
                         miles = route['distance']/1609.34
+                        routeDataStr = str(round(miles,1))+ " ground miles from "+ startLoc + " to "+ endLoc+ " (over " + str(round(hours,1)) + " hours, avg "+ str(round(mph, 1)) + " mph)"
+                        routeDataDetails.append(routeDataStr)
                         if printSteps:
-                            print(str(round(miles,1))+ " ground miles from "+ startLoc + " to "+ endLoc+ " (over " + str(round(hours,1)) + " hours, avg "+ str(round(mph, 1)) + " mph)")
+                            print(routeDataStr)
                         truckMiles += miles
                     else:
+                        routeDataStr = str(round( groundMiles ,1))+ " ground miles from "+ startLoc + " to "+ endLoc+ " estimed using detour index (over " + str(round(hours,1)) + " hours, avg "+ str(round(mph, 1)) + " mph)"
+                        routeDataDetails.append(routeDataStr)
                         if printSteps:
-                            print(str(round( groundMiles ,1))+ " ground miles from "+ startLoc + " to "+ endLoc+ " (over " + str(round(hours,1)) + " hours, avg "+ str(round(mph, 1)) + " mph)")
+                            print(routeDataStr)
                         truckMiles += groundMiles
                     
-        return truckMiles, planeMiles
+        return truckMiles,planeMiles,routeDataDetails
 
     def calculateCSVMiles(self, input_path, output_path, google = False, resetChunks = True):
         dataIterator = pd.read_csv(str(input_path), chunksize=100)
