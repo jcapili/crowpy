@@ -10,6 +10,7 @@ setup(
     install_requires=[
         'geopy==2.2.0',
         'pandas==1.4.1',
+        'lxml==4.6.5',
         'requests==2.20.1',
         'tqdm==4.46.0',
         'usps-api==0.5'
