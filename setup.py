@@ -9,7 +9,7 @@ setup(
     include_package_data=True,
     install_requires=[
         'geopy==1.20.0',
-        'lxml==4.6.5',
+        'lxml==4.9.1',
         'pandas==0.24.2',
         'requests==2.20.1',
         'tqdm==4.46.0',
