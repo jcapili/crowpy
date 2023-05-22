@@ -11,7 +11,7 @@ setup(
         'geopy==1.20.0',
         'lxml==4.6.5',
         'pandas==0.24.2',
-        'requests==2.20.1',
+        'requests==2.31.0',
         'tqdm==4.46.0',
         'xmltodict==0.12.0',
     ],
